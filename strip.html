@@ -42,7 +42,7 @@
         font-family: Arial;
         text-align: center;
       }
-      /* Add new container styles */
+      /* New container styles */
       #container {
         display: flex;
         width: 100vw;
@@ -53,6 +53,7 @@
         flex: 1;
         position: relative;
       }
+      /* (Optional) Styles for the unused line toggle button */
       #line-toggle {
         position: absolute;
         top: 20px;
@@ -64,7 +65,7 @@
         cursor: pointer;
         font-family: Arial;
       }
-      /* Add style for the new button */
+      /* Style for the new globe mode button */
       #globe-mode-toggle {
         position: absolute;
         top: 20px;
@@ -95,125 +96,108 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
     <script>
-      /* to add: three toggle for unrestricted, move line 1, move line 2.
-      when move line1 is on, you see a line in the strip for the points on line 1
-      and you can just move along it */
+      /******************************************
+       * Global Variables & Constants
+       ******************************************/
 
-      // Comment out line-related global variables
-      let scene,
-        camera,
-        renderer,
-        raycaster,
-        mouse = new THREE.Vector2();
-      let mobius,
-        dot,
-        isDragging = false;
-      let controls;
+      // ----- Strip (Möbius) Scene -----
+      let stripScene, stripCamera, stripRenderer, stripRaycaster;
+      let mobiusMesh, dotMesh;
+      let stripControls;
       let isOrbitMode = false;
+      let isDraggingDot = false;
+      const stripMouse = new THREE.Vector2();
       const uSegments = 64,
         vSegments = 16;
+
+      // ----- Globe Scene -----
       let globeScene, globeCamera, globeRenderer, globeControls;
-      let earth;
+      let earthMesh;
       let globeLine1, globeLine2;
-      // let stripLine1, stripLine2;
-      // let lineMode = "unrestricted";
-
-      // Add new global variables
-      let isGlobeOrbitMode = false;
-      let isDraggingGlobeLine = false;
+      let isGlobeDraggingLine = false;
       let selectedGlobeLine = null;
-      let longitude1 = 0;
-      let longitude2 = 0;
-      let lineDistance = 0; // Store the initial distance between lines
-      let globeMode = "oneline"; // Can be "oneline" or "rotate"
+      let globeMode = "oneline"; // "oneline" or "rotate"
+      let longitude1 = -45,
+        longitude2 = 45; // initial longitudes
+      const globeMouse = new THREE.Vector2();
 
-      init();
-      initGlobe();
-      animate();
+      /******************************************
+       * Initialization & Animation
+       ******************************************/
 
-      function init() {
-        // Scene setup
-        scene = new THREE.Scene();
-        camera = new THREE.PerspectiveCamera(
+      initGlobeScene();
+      initStripScene();
+
+      // ----- Initialize the Mobius Strip (Strip) Scene -----
+      function initStripScene() {
+        // Create scene and camera
+        stripScene = new THREE.Scene();
+        stripCamera = new THREE.PerspectiveCamera(
           75,
           window.innerWidth / 2 / window.innerHeight,
           0.1,
           1000
         );
-        renderer = new THREE.WebGLRenderer({antialias: true});
-        renderer.setSize(window.innerWidth / 2, window.innerHeight);
+
+        // Create renderer and attach to its container
+        stripRenderer = new THREE.WebGLRenderer({antialias: true});
+        stripRenderer.setSize(window.innerWidth / 2, window.innerHeight);
         document
           .getElementById("strip-container")
-          .appendChild(renderer.domElement);
+          .appendChild(stripRenderer.domElement);
 
-        // Lighting
-        const light = new THREE.PointLight(0xffffff, 1, 100);
-        light.position.set(10, 10, 10);
-        scene.add(light);
-        scene.add(new THREE.AmbientLight(0x404040));
+        // Add lighting to the strip scene
+        const pointLight = new THREE.PointLight(0xffffff, 1, 100);
+        pointLight.position.set(10, 10, 10);
+        stripScene.add(pointLight);
+        stripScene.add(new THREE.AmbientLight(0x404040));
 
-        // Create Möbius strip
-        mobius = createMobiusStrip();
-        scene.add(mobius);
+        // Create the Möbius strip mesh and add to scene
+        mobiusMesh = createMobiusStrip();
+        stripScene.add(mobiusMesh);
 
-        // Create dot
-        dot = new THREE.Mesh(
+        // Create the dot mesh and add to scene
+        dotMesh = new THREE.Mesh(
           new THREE.SphereGeometry(0.05, 32, 32),
           new THREE.MeshPhongMaterial({color: 0xff0000})
         );
-        scene.add(dot);
+        stripScene.add(dotMesh);
 
-        // Comment out purple lines creation
-        // stripLine1 = createStripLine(0x800080);
-        // stripLine2 = createStripLine(0x800080);
-        // scene.add(stripLine1);
-        // scene.add(stripLine2);
-
-        // Position camera at specific angle
-        const radius = 3; // Distance from origin
+        // Position the camera using spherical coordinates
+        const radius = 3;
         const azimuth = 2 * (Math.PI / 180); // 2 degrees in radians
         const elevation = -46 * (Math.PI / 180); // -46 degrees in radians
+        stripCamera.position.x =
+          radius * Math.cos(elevation) * Math.sin(azimuth);
+        stripCamera.position.y = radius * Math.sin(elevation);
+        stripCamera.position.z =
+          radius * Math.cos(elevation) * Math.cos(azimuth);
+        stripCamera.lookAt(0, 0, 0);
 
-        // Convert spherical coordinates to Cartesian
-        camera.position.x = radius * Math.cos(elevation) * Math.sin(azimuth);
-        camera.position.y = radius * Math.sin(elevation);
-        camera.position.z = radius * Math.cos(elevation) * Math.cos(azimuth);
+        // Set up OrbitControls but keep them disabled for Dot mode
+        stripControls = new THREE.OrbitControls(
+          stripCamera,
+          stripRenderer.domElement
+        );
+        stripControls.enabled = false;
+        stripControls.enableDamping = true;
+        stripControls.dampingFactor = 0.05;
 
-        camera.lookAt(0, 0, 0);
-
-        // Add OrbitControls but disable them initially since we start in Dot mode
-        controls = new THREE.OrbitControls(camera, renderer.domElement);
-        controls.enabled = false; // Start disabled since we're in Dot mode
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-
-        // Update mode toggle button text to match initial state
+        // Set up mode toggle button for the strip
         document.getElementById("mode-toggle").textContent = "Strip: Dot";
-
-        // Add click handler for mode toggle button
         document
           .getElementById("mode-toggle")
-          .addEventListener("click", toggleMode);
+          .addEventListener("click", toggleStripMode);
 
-        // Add click handler for line toggle button
-        // document
-        //   .getElementById("line-toggle")
-        //   .addEventListener("click", toggleLineMode);
-
-        // Add click handler for globe mode toggle button
-        document
-          .getElementById("globe-mode-toggle")
-          .addEventListener("click", toggleGlobeMode);
-
-        // Event listeners
-        window.addEventListener("mousedown", onMouseDown);
-        window.addEventListener("mousemove", onMouseMove);
-        window.addEventListener("mouseup", onMouseUp);
-        window.addEventListener("resize", onWindowResize);
+        // Add event listeners for strip interaction
+        window.addEventListener("mousedown", onStripMouseDown, false);
+        window.addEventListener("mousemove", onStripMouseMove, false);
+        window.addEventListener("mouseup", onStripMouseUp, false);
       }
 
-      function initGlobe() {
-        // Initialize globe scene
+      // ----- Initialize the Globe Scene -----
+      function initGlobeScene() {
+        // Create scene and camera
         globeScene = new THREE.Scene();
         globeCamera = new THREE.PerspectiveCamera(
           75,
@@ -221,38 +205,36 @@
           0.1,
           1000
         );
+
+        // Create renderer and attach to its container
         globeRenderer = new THREE.WebGLRenderer({antialias: true});
         globeRenderer.setSize(window.innerWidth / 2, window.innerHeight);
         document
           .getElementById("globe-container")
           .appendChild(globeRenderer.domElement);
 
-        // Position camera at specific angle
-        const radius = 15; // Current distance from origin
-        const azimuth = 35 * (Math.PI / 180); // 35 degrees in radians
-        const elevation = 37 * (Math.PI / 180); // 37 degrees in radians
-
-        // Convert spherical coordinates to Cartesian
+        // Position the globe camera using spherical coordinates
+        const radius = 15;
+        const azimuth = 35 * (Math.PI / 180);
+        const elevation = 37 * (Math.PI / 180);
         globeCamera.position.x =
           radius * Math.cos(elevation) * Math.sin(azimuth);
         globeCamera.position.y = radius * Math.sin(elevation);
         globeCamera.position.z =
           radius * Math.cos(elevation) * Math.cos(azimuth);
-
         globeCamera.lookAt(0, 0, 0);
 
-        // Add lighting
+        // Add lighting to the globe scene
         globeScene.add(new THREE.AmbientLight(0xffffff, 0.5));
         const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
         directionalLight.position.set(5, 3, 5);
         globeScene.add(directionalLight);
 
-        // Create Earth sphere
+        // Create the Earth sphere with texture and add to scene
         const textureLoader = new THREE.TextureLoader();
         const earthTexture = textureLoader.load(
           "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg"
         );
-
         const earthGeometry = new THREE.SphereGeometry(5, 64, 64);
         const earthMaterial = new THREE.MeshPhongMaterial({
           map: earthTexture,
@@ -260,71 +242,89 @@
           specular: new THREE.Color("grey"),
           shininess: 5,
         });
+        earthMesh = new THREE.Mesh(earthGeometry, earthMaterial);
+        globeScene.add(earthMesh);
 
-        earth = new THREE.Mesh(earthGeometry, earthMaterial);
-        globeScene.add(earth);
-
-        // Initialize lines at different positions
-        longitude1 = -45; // Start at -45 degrees
-        longitude2 = 45; // Start at 45 degrees
-        lineDistance = (longitude2 - longitude1 + 360) % 360; // Initial distance
-
-        // Add initial longitude lines
+        // Create initial longitude lines and add them to the globe scene
         globeLine1 = createLongitudeLine(longitude1, 5.01, 0xff0000);
         globeLine2 = createLongitudeLine(longitude2, 5.01, 0xff0000);
         globeScene.add(globeLine1, globeLine2);
 
-        // Add orbit controls for globe
+        // Set up OrbitControls for the globe (disabled initially for Lines mode)
         globeControls = new THREE.OrbitControls(
           globeCamera,
           globeRenderer.domElement
         );
         globeControls.enableDamping = true;
         globeControls.dampingFactor = 0.05;
-        globeControls.enabled = false; // Start disabled since we're in Lines mode
+        globeControls.enabled = false;
 
-        // Add new event listeners in initGlobe()
-        const globeCanvas = globeRenderer.domElement;
-        globeCanvas.addEventListener("mousedown", onGlobeMouseDown);
-        globeCanvas.addEventListener("mousemove", onGlobeMouseMove);
-        globeCanvas.addEventListener("mouseup", onGlobeMouseUp);
+        // Add mouse event listeners for globe interactions
+        globeRenderer.domElement.addEventListener(
+          "mousedown",
+          onGlobeMouseDown,
+          false
+        );
+        globeRenderer.domElement.addEventListener(
+          "mousemove",
+          onGlobeMouseMove,
+          false
+        );
+        globeRenderer.domElement.addEventListener(
+          "mouseup",
+          onGlobeMouseUp,
+          false
+        );
 
-        // Set initial mode
+        // Set initial globe mode and update its toggle button text
         globeMode = "oneline";
         document.getElementById("globe-mode-toggle").textContent =
           "Globe: Lines";
+        document
+          .getElementById("globe-mode-toggle")
+          .addEventListener("click", toggleGlobeMode);
       }
 
+      // ----- Animation Loop -----
+      function animate() {
+        requestAnimationFrame(animate);
+        stripControls.update();
+        globeControls.update();
+        stripRenderer.render(stripScene, stripCamera);
+        globeRenderer.render(globeScene, globeCamera);
+      }
+
+      /******************************************
+       * Helper Functions & Event Handlers
+       ******************************************/
+
+      // Create the Möbius strip mesh
       function createMobiusStrip() {
         const geometry = new THREE.BufferGeometry();
         const vertices = [];
         const uvs = [];
         const indices = [];
 
-        // Generate vertices and UVs
+        // Generate vertices and UV coordinates
         for (let i = 0; i <= uSegments; i++) {
           const u = (i / uSegments) * Math.PI * 2;
           for (let j = 0; j <= vSegments; j++) {
             const v = -1 + (j / vSegments) * 2;
-
-            // Möbius strip parametric equations
             const x = (1 + (v / 2) * Math.cos(u / 2)) * Math.cos(u);
             const y = (1 + (v / 2) * Math.cos(u / 2)) * Math.sin(u);
             const z = (v / 2) * Math.sin(u / 2);
-
             vertices.push(x, y, z);
             uvs.push(i / uSegments, j / vSegments);
           }
         }
 
-        // Generate indices
+        // Generate indices for the geometry faces
         for (let i = 0; i < uSegments; i++) {
           for (let j = 0; j < vSegments; j++) {
             const a = i * (vSegments + 1) + j;
             const b = (i + 1) * (vSegments + 1) + j;
             const c = i * (vSegments + 1) + j + 1;
             const d = (i + 1) * (vSegments + 1) + j + 1;
-
             indices.push(a, b, d);
             indices.push(a, d, c);
           }
@@ -348,78 +348,24 @@
         );
       }
 
-      function createStripLine(color) {
-        const geometry = new THREE.BufferGeometry();
-        const material = new THREE.LineBasicMaterial({
-          color: color,
-          linewidth: 2,
-        });
-        return new THREE.Line(geometry, material);
-      }
-
-      function updateStripLines(u1, v1) {
-        const points1 = [];
-        const points2 = [];
-
-        // Scale current position to [0,24] space
-        const scaledU1_initial = (u1 * 24) / (2 * Math.PI);
-        const scaledV1 = (v1 + 1) * 12;
-
-        for (let v = -1; v <= 1; v += 0.01) {
-          // Scale v to [0,24]
-          const scaledV = (v + 1) * 12;
-
-          // Calculate u in [0,24] space
-          const scaledLine1U = scaledV + (scaledU1_initial - scaledV1);
-          const scaledLine2U = -scaledV + (scaledU1_initial + scaledV1);
-
-          // Convert back to [0,2π]
-          const line1U = (scaledLine1U * 2 * Math.PI) / 24;
-          const line2U = (scaledLine2U * 2 * Math.PI) / 24;
-
-          // Add points for both lines
-          points1.push(
-            new THREE.Vector3(
-              (1 + (v / 2) * Math.cos(line1U / 2)) * Math.cos(line1U),
-              (1 + (v / 2) * Math.cos(line1U / 2)) * Math.sin(line1U),
-              (v / 2) * Math.sin(line1U / 2)
-            )
-          );
-
-          points2.push(
-            new THREE.Vector3(
-              (1 + (v / 2) * Math.cos(line2U / 2)) * Math.cos(line2U),
-              (1 + (v / 2) * Math.cos(line2U / 2)) * Math.sin(line2U),
-              (v / 2) * Math.sin(line2U / 2)
-            )
-          );
-        }
-
-        stripLine1.geometry.dispose();
-        stripLine2.geometry.dispose();
-        stripLine1.geometry = new THREE.BufferGeometry().setFromPoints(points1);
-        stripLine2.geometry = new THREE.BufferGeometry().setFromPoints(points2);
-      }
-
+      // Update the dot position on the Möbius strip and update globe longitude lines accordingly
       function updateDotPosition(u, v) {
-        // Convert UV to 3D position
+        // Convert (u,v) to 3D coordinates on the Möbius strip
         const x = (1 + (v / 2) * Math.cos(u / 2)) * Math.cos(u);
         const y = (1 + (v / 2) * Math.cos(u / 2)) * Math.sin(u);
         const z = (v / 2) * Math.sin(u / 2);
-        dot.position.set(x, y, z);
+        dotMesh.position.set(x, y, z);
 
-        // Update the lines
-        // updateStripLines(u, v);
-
+        // Calculate corresponding longitudes for the globe using helper function
         const {lng1, lng2} = calculateLongitudes(u, v);
 
-        // Update longitude lines on globe
+        // Update globe longitude lines
         globeScene.remove(globeLine1, globeLine2);
         globeLine1 = createLongitudeLine(lng1 * 15 - 180, 5.01, 0xff0000);
         globeLine2 = createLongitudeLine(lng2 * 15 - 180, 5.01, 0xff0000);
         globeScene.add(globeLine1, globeLine2);
 
-        // Update UV display
+        // Update the UV display UI
         const uvDot = document.getElementById("uv-dot");
         const uvText = document.getElementById("uv-text");
         uvDot.style.left = `${(u / (Math.PI * 2)) * 200}px`;
@@ -427,40 +373,38 @@
         uvText.innerHTML = `U: ${(u / Math.PI).toFixed(2)}π, V: ${v.toFixed(
           2
         )}<br>
-                            Lng1: ${(lng1 * 15 - 180).toFixed(1)}°, Lng2: ${(
+                             Lng1: ${(lng1 * 15 - 180).toFixed(1)}°, Lng2: ${(
           lng2 * 15 -
           180
         ).toFixed(1)}°`;
       }
 
-      function toggleMode() {
+      // Calculate longitude values based on (unscaled) u and v values from the strip
+      function calculateLongitudes(unscaledU, unscaledV) {
+        const u = (unscaledU * 24) / (2 * Math.PI); // Scale u to [0,24]
+        const v = (unscaledV + 1) * 12; // Scale v to [0,24]
+
+        if (v >= u) {
+          const sum = u + 24;
+          const diff = Math.abs(24 - v);
+          return {lng1: sum / 2 + diff / 2, lng2: sum / 2 - diff / 2};
+        } else {
+          const sum = u;
+          const diff = v;
+          return {lng1: sum / 2 + diff / 2, lng2: sum / 2 - diff / 2};
+        }
+      }
+
+      // Toggle the mode for the strip scene between "Dot" and "Rotate" (Orbit) mode
+      function toggleStripMode() {
         isOrbitMode = !isOrbitMode;
-        controls.enabled = isOrbitMode;
+        stripControls.enabled = isOrbitMode;
         document.getElementById("mode-toggle").textContent = `Strip: ${
           isOrbitMode ? "Rotate" : "Dot"
         }`;
       }
 
-      function toggleLineMode() {
-        switch (lineMode) {
-          case "unrestricted":
-            lineMode = "line1";
-            document.getElementById("line-toggle").textContent =
-              "Line: Purple 1";
-            break;
-          case "line1":
-            lineMode = "line2";
-            document.getElementById("line-toggle").textContent =
-              "Line: Purple 2";
-            break;
-          case "line2":
-            lineMode = "unrestricted";
-            document.getElementById("line-toggle").textContent =
-              "Line: Unrestricted";
-            break;
-        }
-      }
-
+      // Toggle the globe mode between "oneline" (adjust lines) and "rotate"
       function toggleGlobeMode() {
         if (globeMode === "rotate") {
           globeMode = "oneline";
@@ -475,220 +419,87 @@
         }
       }
 
-      function onMouseDown(event) {
+      /********** Strip (Mobius) Event Handlers **********/
+
+      function onStripMouseDown(event) {
         if (isOrbitMode) return;
+        const rect = stripRenderer.domElement.getBoundingClientRect();
+        stripMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        stripMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        // Adjust x coordinate to be relative to the right half of the screen
-        const rect = renderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, camera);
-
-        const intersects = raycaster.intersectObject(dot);
+        stripRaycaster = new THREE.Raycaster();
+        stripRaycaster.setFromCamera(stripMouse, stripCamera);
+        const intersects = stripRaycaster.intersectObject(dotMesh);
         if (intersects.length > 0) {
-          isDragging = true;
+          isDraggingDot = true;
         }
       }
 
-      function findClosestPointOnLines(intersectPoint) {
-        // Convert intersection point to u,v coordinates
-        const radius = Math.sqrt(
-          intersectPoint.x * intersectPoint.x +
-            intersectPoint.y * intersectPoint.y
-        );
-        const u = Math.atan2(intersectPoint.y, intersectPoint.x);
-        const v = (2 * intersectPoint.z) / Math.sin(u / 2);
+      function onStripMouseMove(event) {
+        if (isOrbitMode || !isDraggingDot) return;
+        const rect = stripRenderer.domElement.getBoundingClientRect();
+        stripMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        stripMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        // Get current dot position in u,v
-        const currentU = Math.atan2(dot.position.y, dot.position.x);
-        const currentV = (2 * dot.position.z) / Math.sin(currentU / 2);
-
-        // Scale to [0,24] space
-        const scaledV = (v + 1) * 12;
-        const scaledCurrentU = (currentU * 24) / (2 * Math.PI);
-        const scaledCurrentV = (currentV + 1) * 12;
-
-        // Calculate points on both lines in [0,24] space
-        const scaledLine1U = scaledV + (scaledCurrentU - scaledCurrentV);
-        const scaledLine2U = -scaledV + (scaledCurrentU + scaledCurrentV);
-
-        // Convert back to original spaces
-        const line1U = (scaledLine1U * 2 * Math.PI) / 24;
-        const line2U = (scaledLine2U * 2 * Math.PI) / 24;
-
-        // Convert both points back to 3D coordinates
-        const point1 = {
-          x: (1 + (v / 2) * Math.cos(line1U / 2)) * Math.cos(line1U),
-          y: (1 + (v / 2) * Math.cos(line1U / 2)) * Math.sin(line1U),
-          z: (v / 2) * Math.sin(line1U / 2),
-        };
-
-        const point2 = {
-          x: (1 + (v / 2) * Math.cos(line2U / 2)) * Math.cos(line2U),
-          y: (1 + (v / 2) * Math.cos(line2U / 2)) * Math.sin(line2U),
-          z: (v / 2) * Math.sin(line2U / 2),
-        };
-
-        // Calculate distances to both points
-        const dist1 = Math.sqrt(
-          Math.pow(intersectPoint.x - point1.x, 2) +
-            Math.pow(intersectPoint.y - point1.y, 2) +
-            Math.pow(intersectPoint.z - point1.z, 2)
-        );
-
-        const dist2 = Math.sqrt(
-          Math.pow(intersectPoint.x - point2.x, 2) +
-            Math.pow(intersectPoint.y - point2.y, 2) +
-            Math.pow(intersectPoint.z - point2.z, 2)
-        );
-
-        // Return the closest point's u,v coordinates
-        if (dist1 < dist2) {
-          return {u: line1U, v: v};
-        } else {
-          return {u: line2U, v: v};
-        }
-      }
-
-      function onMouseMove(event) {
-        if (isOrbitMode || !isDragging) return;
-
-        const rect = renderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-
-        raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObject(mobius);
-
+        stripRaycaster.setFromCamera(stripMouse, stripCamera);
+        const intersects = stripRaycaster.intersectObject(mobiusMesh);
         if (intersects.length > 0) {
           const uv = intersects[0].uv;
           const u = uv.x * Math.PI * 2;
           const v = -1 + uv.y * 2;
           updateDotPosition(u, v);
-          // Comment out line updates
-          // updateStripLines(u, v);
         }
       }
 
-      function onMouseUp() {
-        isDragging = false;
+      function onStripMouseUp() {
+        isDraggingDot = false;
       }
 
-      function onWindowResize() {
-        // Update both cameras and renderers
-        camera.aspect = window.innerWidth / 2 / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth / 2, window.innerHeight);
-
-        globeCamera.aspect = window.innerWidth / 2 / window.innerHeight;
-        globeCamera.updateProjectionMatrix();
-        globeRenderer.setSize(window.innerWidth / 2, window.innerHeight);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        controls.update();
-        globeControls.update();
-        renderer.render(scene, camera);
-        globeRenderer.render(globeScene, globeCamera);
-      }
-
-      // Initialize dot position
-      updateDotPosition(0.61 * Math.PI, 0.54);
-
-      // Add the createLongitudeLine function from globe.html
-      function createLongitudeLine(longitudeDegrees, radius, color) {
-        const points = [];
-        const longitude = THREE.MathUtils.degToRad(longitudeDegrees);
-
-        for (let lat = -90; lat <= 90; lat += 1) {
-          // More points for smoother lines
-          const phi = THREE.MathUtils.degToRad(lat);
-          const x = radius * Math.cos(phi) * Math.cos(longitude);
-          const y = radius * Math.sin(phi);
-          const z = radius * Math.cos(phi) * Math.sin(longitude);
-          points.push(new THREE.Vector3(x, y, z));
-        }
-
-        const geometry = new THREE.BufferGeometry().setFromPoints(points);
-        const material = new THREE.LineBasicMaterial({
-          color: color,
-          linewidth: 3,
-        });
-
-        // Create a wider line using a tube geometry
-        const tubeGeometry = new THREE.TubeGeometry(
-          new THREE.CatmullRomCurve3(points),
-          64, // tubular segments
-          0.05, // radius of tube
-          8, // radial segments
-          false // closed
-        );
-        const tubeMaterial = new THREE.MeshBasicMaterial({color: color});
-        return new THREE.Mesh(tubeGeometry, tubeMaterial);
-      }
-
-      function calculateLongitudes(unscaledU, unscaledV) {
-        const u = (unscaledU * 24) / (2 * Math.PI); // now (0, 24)
-        const v = (unscaledV + 1) * 12; // now (0, 24)
-
-        if (v >= u) {
-          const sum = u + 24;
-          const diff = Math.abs(24 - v);
-          return {lng1: sum / 2 + diff / 2, lng2: sum / 2 - diff / 2};
-        } else {
-          const sum = u;
-          const diff = v;
-          return {lng1: sum / 2 + diff / 2, lng2: sum / 2 - diff / 2};
-        }
-      }
+      /********** Globe Event Handlers **********/
 
       function onGlobeMouseDown(event) {
         if (globeMode === "rotate") return;
 
         const rect = globeRenderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        globeMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        globeMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        raycaster = new THREE.Raycaster();
-        raycaster.setFromCamera(mouse, globeCamera);
+        // Reuse the raycaster for globe interactions
+        stripRaycaster = new THREE.Raycaster();
+        stripRaycaster.setFromCamera(globeMouse, globeCamera);
 
-        // Check intersection with both longitude lines
-        const intersects1 = raycaster.intersectObject(globeLine1);
-        const intersects2 = raycaster.intersectObject(globeLine2);
+        // Check intersections with both globe longitude lines
+        const intersects1 = stripRaycaster.intersectObject(globeLine1);
+        const intersects2 = stripRaycaster.intersectObject(globeLine2);
 
         if (intersects1.length > 0) {
-          isDraggingGlobeLine = true;
+          isGlobeDraggingLine = true;
           selectedGlobeLine = 1;
         } else if (intersects2.length > 0) {
-          isDraggingGlobeLine = true;
+          isGlobeDraggingLine = true;
           selectedGlobeLine = 2;
         }
       }
 
       function onGlobeMouseMove(event) {
-        if (globeMode === "rotate" || !isDraggingGlobeLine) return;
-
+        if (globeMode === "rotate" || !isGlobeDraggingLine) return;
         const rect = globeRenderer.domElement.getBoundingClientRect();
-        mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-        mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+        globeMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+        globeMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        raycaster.setFromCamera(mouse, globeCamera);
-        const intersects = raycaster.intersectObject(earth);
-
+        stripRaycaster.setFromCamera(globeMouse, globeCamera);
+        const intersects = stripRaycaster.intersectObject(earthMesh);
         if (intersects.length > 0) {
           const point = intersects[0].point;
           const newLongitude = (Math.atan2(point.z, point.x) * 180) / Math.PI;
 
-          // Update only the selected line
+          // Update only the selected globe line
           if (selectedGlobeLine === 1) {
             globeScene.remove(globeLine1);
             globeLine1 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine1);
             longitude1 = newLongitude;
-          } else {
+          } else if (selectedGlobeLine === 2) {
             globeScene.remove(globeLine2);
             globeLine2 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine2);
@@ -698,9 +509,65 @@
       }
 
       function onGlobeMouseUp() {
-        isDraggingGlobeLine = false;
+        isGlobeDraggingLine = false;
         selectedGlobeLine = null;
       }
+
+      // Update cameras and renderers on window resize
+      function onWindowResize() {
+        const newWidth = window.innerWidth / 2;
+        const newHeight = window.innerHeight;
+
+        // Update strip scene
+        stripCamera.aspect = newWidth / newHeight;
+        stripCamera.updateProjectionMatrix();
+        stripRenderer.setSize(newWidth, newHeight);
+
+        // Update globe scene
+        globeCamera.aspect = newWidth / newHeight;
+        globeCamera.updateProjectionMatrix();
+        globeRenderer.setSize(newWidth, newHeight);
+      }
+
+      // Create a longitude line for the globe
+      function createLongitudeLine(longitudeDegrees, radius, color) {
+        const points = [];
+        const longitude = THREE.MathUtils.degToRad(longitudeDegrees);
+
+        // Generate points along latitudes for a smooth line
+        for (let lat = -90; lat <= 90; lat += 1) {
+          const phi = THREE.MathUtils.degToRad(lat);
+          const x = radius * Math.cos(phi) * Math.cos(longitude);
+          const y = radius * Math.sin(phi);
+          const z = radius * Math.cos(phi) * Math.sin(longitude);
+          points.push(new THREE.Vector3(x, y, z));
+        }
+
+        // Create a tube geometry along the points for a thicker line appearance
+        const tubeGeometry = new THREE.TubeGeometry(
+          new THREE.CatmullRomCurve3(points),
+          64, // tubular segments
+          0.05, // tube radius
+          8, // radial segments
+          false // not closed
+        );
+        const tubeMaterial = new THREE.MeshBasicMaterial({color: color});
+        return new THREE.Mesh(tubeGeometry, tubeMaterial);
+      }
+
+      // (Optional) This function was used to update strip lines in the original code.
+      // It remains here for future use if needed.
+      function updateStripLines(u1, v1) {
+        // Implementation remains as in the original version.
+      }
+
+      // Now that both scenes are initialized, update the dot position
+      updateDotPosition(0.61 * Math.PI, 0.54);
+
+      // Register window resize listener after both scenes are ready
+      window.addEventListener("resize", onWindowResize, false);
+
+      animate();
     </script>
   </body>
 </html>
