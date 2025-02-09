@@ -32,13 +32,15 @@
       #mode-toggle {
         position: absolute;
         top: 20px;
-        left: 150px;
+        left: 250px;
         padding: 10px;
+        width: 120px;
         background: rgba(0, 0, 0, 0.5);
         color: white;
         border: 2px solid white;
         cursor: pointer;
         font-family: Arial;
+        text-align: center;
       }
       /* Add new container styles */
       #container {
@@ -68,11 +70,13 @@
         top: 20px;
         left: 20px;
         padding: 10px;
+        width: 150px;
         background: rgba(0, 0, 0, 0.5);
         color: white;
         border: 2px solid white;
         cursor: pointer;
         font-family: Arial;
+        text-align: center;
       }
     </style>
   </head>
@@ -118,6 +122,10 @@
       let isGlobeOrbitMode = false;
       let isDraggingGlobeLine = false;
       let selectedGlobeLine = null;
+      let longitude1 = 0;
+      let longitude2 = 0;
+      let lineDistance = 0; // Store the initial distance between lines
+      let globeMode = "oneline"; // Can be "oneline" or "rotate"
 
       init();
       initGlobe();
@@ -256,9 +264,14 @@
         earth = new THREE.Mesh(earthGeometry, earthMaterial);
         globeScene.add(earth);
 
+        // Initialize lines at different positions
+        longitude1 = -45; // Start at -45 degrees
+        longitude2 = 45; // Start at 45 degrees
+        lineDistance = (longitude2 - longitude1 + 360) % 360; // Initial distance
+
         // Add initial longitude lines
-        globeLine1 = createLongitudeLine(0, 5.01, 0xff0000);
-        globeLine2 = createLongitudeLine(0, 5.01, 0xff0000);
+        globeLine1 = createLongitudeLine(longitude1, 5.01, 0xff0000);
+        globeLine2 = createLongitudeLine(longitude2, 5.01, 0xff0000);
         globeScene.add(globeLine1, globeLine2);
 
         // Add orbit controls for globe
@@ -276,7 +289,8 @@
         globeCanvas.addEventListener("mousemove", onGlobeMouseMove);
         globeCanvas.addEventListener("mouseup", onGlobeMouseUp);
 
-        // Set initial button text to match initial state
+        // Set initial mode
+        globeMode = "oneline";
         document.getElementById("globe-mode-toggle").textContent =
           "Globe: Lines";
       }
@@ -448,11 +462,17 @@
       }
 
       function toggleGlobeMode() {
-        isGlobeOrbitMode = !isGlobeOrbitMode;
-        globeControls.enabled = isGlobeOrbitMode;
-        document.getElementById("globe-mode-toggle").textContent = `Globe: ${
-          isGlobeOrbitMode ? "Rotate" : "Lines"
-        }`;
+        if (globeMode === "rotate") {
+          globeMode = "oneline";
+          globeControls.enabled = false;
+          document.getElementById("globe-mode-toggle").textContent =
+            "Globe: Lines";
+        } else {
+          globeMode = "rotate";
+          globeControls.enabled = true;
+          document.getElementById("globe-mode-toggle").textContent =
+            "Globe: Rotate";
+        }
       }
 
       function onMouseDown(event) {
@@ -583,25 +603,31 @@
         const points = [];
         const longitude = THREE.MathUtils.degToRad(longitudeDegrees);
 
-        for (let offset = -0.015; offset <= 0.015; offset += 0.002) {
-          for (let lat = -90; lat <= 90; lat += 1) {
-            const phi = THREE.MathUtils.degToRad(lat);
-            const adjustedLongitude = longitude + offset;
-            const x = radius * Math.cos(phi) * Math.cos(adjustedLongitude);
-            const y = radius * Math.sin(phi);
-            const z = radius * Math.cos(phi) * Math.sin(adjustedLongitude);
-            points.push(new THREE.Vector3(x, y, z));
-          }
+        for (let lat = -90; lat <= 90; lat += 1) {
+          // More points for smoother lines
+          const phi = THREE.MathUtils.degToRad(lat);
+          const x = radius * Math.cos(phi) * Math.cos(longitude);
+          const y = radius * Math.sin(phi);
+          const z = radius * Math.cos(phi) * Math.sin(longitude);
+          points.push(new THREE.Vector3(x, y, z));
         }
 
         const geometry = new THREE.BufferGeometry().setFromPoints(points);
         const material = new THREE.LineBasicMaterial({
           color: color,
-          opacity: 0.8,
-          transparent: true,
+          linewidth: 3,
         });
 
-        return new THREE.Line(geometry, material);
+        // Create a wider line using a tube geometry
+        const tubeGeometry = new THREE.TubeGeometry(
+          new THREE.CatmullRomCurve3(points),
+          64, // tubular segments
+          0.05, // radius of tube
+          8, // radial segments
+          false // closed
+        );
+        const tubeMaterial = new THREE.MeshBasicMaterial({color: color});
+        return new THREE.Mesh(tubeGeometry, tubeMaterial);
       }
 
       function calculateLongitudes(unscaledU, unscaledV) {
@@ -620,7 +646,7 @@
       }
 
       function onGlobeMouseDown(event) {
-        if (isGlobeOrbitMode) return;
+        if (globeMode === "rotate") return;
 
         const rect = globeRenderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -643,7 +669,7 @@
       }
 
       function onGlobeMouseMove(event) {
-        if (isGlobeOrbitMode || !isDraggingGlobeLine) return;
+        if (globeMode === "rotate" || !isDraggingGlobeLine) return;
 
         const rect = globeRenderer.domElement.getBoundingClientRect();
         mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -654,17 +680,19 @@
 
         if (intersects.length > 0) {
           const point = intersects[0].point;
-          const longitude = (Math.atan2(point.z, point.x) * 180) / Math.PI;
+          const newLongitude = (Math.atan2(point.z, point.x) * 180) / Math.PI;
 
-          // Update the selected line
+          // Update only the selected line
           if (selectedGlobeLine === 1) {
             globeScene.remove(globeLine1);
-            globeLine1 = createLongitudeLine(longitude, 5.01, 0xff0000);
+            globeLine1 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine1);
+            longitude1 = newLongitude;
           } else {
             globeScene.remove(globeLine2);
-            globeLine2 = createLongitudeLine(longitude, 5.01, 0xff0000);
+            globeLine2 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine2);
+            longitude2 = newLongitude;
           }
         }
       }
