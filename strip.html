@@ -156,8 +156,8 @@
       let isGlobeDraggingLine = false;
       let selectedGlobeLine = null;
       let globeMode = "oneline"; // "oneline" or "rotate"
-      let longitude1 = -45,
-        longitude2 = 45; // initial longitudes
+      let longitude1 = 88,
+        longitude2 = 0; // initial longitudes
       const globeMouse = new THREE.Vector2();
 
       /******************************************
@@ -255,7 +255,7 @@
         // Position the globe camera using spherical coordinates
         const radius = 15;
         const azimuth = 35 * (Math.PI / 180);
-        const elevation = 55 * (Math.PI / 180);
+        const elevation = 70 * (Math.PI / 180);
         globeCamera.position.x =
           radius * Math.cos(elevation) * Math.sin(azimuth);
         globeCamera.position.y = radius * Math.sin(elevation);
@@ -388,7 +388,7 @@
       }
 
       // Update the dot position on the Möbius strip and update globe longitude lines accordingly
-      function updateDotPosition(u, v) {
+      function updateDotPosition(u, v, withWriteback) {
         // Convert (u,v) to 3D coordinates on the Möbius strip
         const x = (1 + (v / 2) * Math.cos(u / 2)) * Math.cos(u);
         const y = (1 + (v / 2) * Math.cos(u / 2)) * Math.sin(u);
@@ -398,11 +398,13 @@
         // Calculate corresponding longitudes for the globe using helper function
         const {lng1, lng2} = calculateLongitudes(u, v);
 
-        // Update globe longitude lines
-        globeScene.remove(globeLine1, globeLine2);
-        globeLine1 = createLongitudeLine(lng1 * 15 - 180, 5.01, 0xff0000);
-        globeLine2 = createLongitudeLine(lng2 * 15 - 180, 5.01, 0xff0000);
-        globeScene.add(globeLine1, globeLine2);
+        if (withWriteback) {
+          // Update globe longitude lines
+          globeScene.remove(globeLine1, globeLine2);
+          globeLine1 = createLongitudeLine(lng1 * 15 - 180, 5.01, 0xff0000);
+          globeLine2 = createLongitudeLine(lng2 * 15 - 180, 5.01, 0xff0000);
+          globeScene.add(globeLine1, globeLine2);
+        }
 
         // Update the UV display UI
         const uvDot = document.getElementById("uv-dot");
@@ -432,6 +434,33 @@
           const diff = v;
           return {lng1: sum / 2 + diff / 2, lng2: sum / 2 - diff / 2};
         }
+      }
+
+      function calculateUV(lng1, lng2) {
+        const long1 = from180sTo24(lng1);
+        const long2 = from180sTo24(lng2);
+        const uZeroOne = ((long1 + long2) % 24) / 24;
+
+        const absDiff = Math.abs(long1 - long2);
+        const k = Math.abs(12 - absDiff);
+
+        const sumLessThan24 = long1 + long2 < 24;
+        const diffLessThan12 = absDiff < 12;
+        const opsAgree = sumLessThan24 == diffLessThan12;
+
+        const vZeroTwentyFour = opsAgree ? 12 - k : 12 + k;
+        const u = uZeroOne * 2 * Math.PI;
+        const v = vZeroTwentyFour / 12 - 1;
+
+        return {u, v};
+      }
+
+      function from180sTo2pi(input) {
+        return (2 * Math.PI * (input + 180)) / 360;
+      }
+
+      function from180sTo24(input) {
+        return (24 * (input + 180)) / 360;
       }
 
       // Toggle the mode for the strip scene between "Dot" and "Rotate" (Orbit) mode
@@ -486,7 +515,7 @@
           const uv = intersects[0].uv;
           const u = uv.x * Math.PI * 2;
           const v = -1 + uv.y * 2;
-          updateDotPosition(u, v);
+          updateDotPosition(u, v, true);
         }
       }
 
@@ -544,7 +573,16 @@
             globeScene.add(globeLine2);
             longitude2 = newLongitude;
           }
+
+          // Update the dot position based on the new longitudes
+          updateDotFromLongitudes(longitude1, longitude2);
         }
+      }
+
+      // Add this new function to update the dot based on longitudes
+      function updateDotFromLongitudes(lng1, lng2) {
+        const {u, v} = calculateUV(lng1, lng2);
+        updateDotPosition(u, v, false);
       }
 
       function onGlobeMouseUp() {
@@ -600,8 +638,9 @@
         // Implementation remains as in the original version.
       }
 
-      // Now that both scenes are initialized, update the dot position
-      updateDotPosition(0.61 * Math.PI, 0.54);
+      // Initialize dot position from starting longitudes
+      const {u, v} = calculateUV(longitude1, longitude2);
+      updateDotPosition(u, v, false);
 
       // Register window resize listener after both scenes are ready
       window.addEventListener("resize", onWindowResize, false);
