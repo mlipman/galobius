@@ -79,6 +79,33 @@
         font-family: Arial;
         text-align: center;
       }
+      /* Add tooltip styles */
+      .control-button {
+        position: relative;
+        display: inline-block;
+      }
+
+      .control-button::after {
+        content: attr(data-tooltip);
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 5px 10px;
+        background: rgba(0, 0, 0, 0.8);
+        color: white;
+        border-radius: 4px;
+        font-size: 12px;
+        white-space: nowrap;
+        opacity: 0;
+        transition: opacity 0.2s;
+        pointer-events: none;
+        margin-top: 5px;
+      }
+
+      .control-button:hover::after {
+        opacity: 1;
+      }
     </style>
   </head>
   <body>
@@ -86,8 +113,20 @@
       <div id="globe-container"></div>
       <div id="strip-container"></div>
     </div>
-    <button id="globe-mode-toggle">Globe: Lines</button>
-    <button id="mode-toggle">Strip: Dot</button>
+    <button
+      id="globe-mode-toggle"
+      class="control-button"
+      data-tooltip="Press 'G' to toggle"
+    >
+      Globe: Lines
+    </button>
+    <button
+      id="mode-toggle"
+      class="control-button"
+      data-tooltip="Press 'S' to toggle"
+    >
+      Strip: Dot
+    </button>
     <!--<button id="line-toggle">Line: Unrestricted</button>-->
     <div id="uv-display">
       <div id="uv-dot"></div>
@@ -216,7 +255,7 @@
         // Position the globe camera using spherical coordinates
         const radius = 15;
         const azimuth = 35 * (Math.PI / 180);
-        const elevation = 37 * (Math.PI / 180);
+        const elevation = 55 * (Math.PI / 180);
         globeCamera.position.x =
           radius * Math.cos(elevation) * Math.sin(azimuth);
         globeCamera.position.y = radius * Math.sin(elevation);
@@ -566,6 +605,15 @@
 
       // Register window resize listener after both scenes are ready
       window.addEventListener("resize", onWindowResize, false);
+
+      // Add keyboard event listener
+      window.addEventListener("keydown", (event) => {
+        if (event.key.toLowerCase() === "g") {
+          toggleGlobeMode();
+        } else if (event.key.toLowerCase() === "s") {
+          toggleStripMode();
+        }
+      });
 
       animate();
     </script>
