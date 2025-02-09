@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Circle & Box Visualization</title>
+    <style>
+      .container {
+        display: flex;
+        gap: 20px;
+        padding: 20px;
+      }
+      canvas {
+        border: 1px solid #000;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <canvas id="circleCanvas" width="300" height="300"></canvas>
+      <canvas id="stripCanvas" width="300" height="200"></canvas>
+    </div>
+    <button id="lockButton" style="margin: 20px">Unlocked</button>
+    <div id="values" style="padding: 20px"></div>
+
+    <script>
+      const circleCanvas = document.getElementById("circleCanvas");
+      const stripCanvas = document.getElementById("stripCanvas");
+      const ctxCircle = circleCanvas.getContext("2d");
+      const ctxStrip = stripCanvas.getContext("2d");
+
+      const circleCenter = {x: 150, y: 150};
+      const circleRadius = 100;
+      let theta1 = Math.PI;
+      let theta2 = Math.PI;
+      let dragging = null;
+      let isLocked = false;
+
+      function drawCircle() {
+        ctxCircle.clearRect(0, 0, 300, 300);
+        ctxCircle.beginPath();
+        ctxCircle.arc(150, 150, 100, 0, Math.PI * 2);
+        ctxCircle.stroke();
+
+        const drawPoint = (angle) => {
+          const x = 150 + 100 * Math.cos(angle);
+          const y = 150 + 100 * Math.sin(angle);
+          ctxCircle.beginPath();
+          ctxCircle.arc(x, y, 10, 0, Math.PI * 2);
+          ctxCircle.fill();
+        };
+
+        ctxCircle.fillStyle = "#f00";
+        drawPoint(theta1);
+        drawPoint(theta2);
+      }
+
+      /**
+       * inputs are between 0 and 2pi. output u is 0 to 1. v is 0 to 24
+       */
+      function calculateUV(theat1, theta2) {
+        const long1 = (theta1 / (2 * Math.PI)) * 24;
+        const long2 = (theta2 / (2 * Math.PI)) * 24;
+        const u = ((long1 + long2) % 24) / 24;
+
+        const absDiff = Math.abs(long1 - long2);
+        const k = Math.abs(12 - absDiff);
+
+        const sumLessThan24 = long1 + long2 < 24;
+        const diffLessThan12 = absDiff < 12;
+        const opsAgree = sumLessThan24 == diffLessThan12;
+
+        const v = opsAgree ? 12 - k : 12 + k;
+
+        return {u, v};
+        // const u = ((theta1 + theta2) % (2 * Math.PI)) / (2 * Math.PI);
+        // const v = 1;
+
+        // ///////////not working attempt from claude/////////////
+        // // Normalize inputs to [0, 2π) range
+        // theta1 = ((theta1 % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+        // theta2 = ((theta2 % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+
+        // // Order the points to ensure continuity
+        // let [t1, t2] = theta1 < theta2 ? [theta1, theta2] : [theta2, theta1];
+
+        // // Calculate the shorter and longer arc lengths between points
+        // let shortArc = t2 - t1;
+        // let longArc = 2 * Math.PI - shortArc;
+
+        // // Choose which arc to use based on which is shorter
+        // let arcLength = Math.min(shortArc, longArc);
+        // let useShortArc = shortArc <= longArc;
+
+        // // For the Möbius strip, we need to handle the twist
+        // // Map the arc midpoint to u coordinate (normalized to [0, 1))
+        // let u = useShortArc
+        //   ? ((t1 + arcLength / 2) / (2 * Math.PI)) % 1
+        //   : ((t2 + arcLength / 2) / (2 * Math.PI)) % 1;
+
+        // // Map the point separation to the v coordinate (scaled to [0, 24])
+        // // When using the long arc, we need to flip the height to create the twist
+        // let v = useShortArc
+        //   ? (arcLength * 24) / (2 * Math.PI)
+        //   : 24 - (arcLength * 24) / (2 * Math.PI);
+        ///////////attempt from claude/////////////
+
+        // to get v from theta 1 and 2
+        // assume theta 1 and 2 are between 0 and 24
+        // k is distnace from center.
+        // if sum is .
+        // examples
+        /*
+        k is abs(diff-12)
+        sum 18/42:
+        99-> v=0. diff0 k=12. 
+        21/21->v=24
+        15/3->v=12
+        16/2-> diff 14. k=2
+        14/4->diff 10 k=2
+
+        00
+        23/1 v=2. diff 22. k=10. v=12-k
+        11/13 v=22. diff 2. k=10. v=12+k
+
+        if the sum is at least 24
+        */
+      }
+
+      // Add this function after calculateUV
+      function calculateThetas(u, v) {
+        // Convert u from 0-1 to 0-24 range
+        const uLong = u * 24;
+
+        // v is already in 0-24 range
+        // k is distance from center (12)
+        const k = Math.abs(12 - v);
+
+        // If v >= 12, points sum to more than 24
+        // If v < 12, points sum to less than 24
+        const sumMoreThan24 = v >= 12;
+
+        // Calculate the difference between points based on k
+        const diff = sumMoreThan24 ? 12 + k : 12 - k;
+
+        // Using sum (uLong) and difference (diff), we can solve for the two points
+        const long1 = ((uLong + diff) / 2) % 24;
+        const long2 = ((uLong - diff) / 2 + 24) % 24;
+
+        return {
+          theta1: (long1 / 24) * (2 * Math.PI),
+          theta2: (long2 / 24) * (2 * Math.PI),
+        };
+      }
+
+      // Modify drawStrip function to handle dragging
+      let draggingBox = false;
+
+      function drawStrip(u, v) {
+        ctxStrip.clearRect(0, 0, 300, 200);
+
+        // Draw box representation
+        ctxStrip.strokeRect(0, 0, 300, 200);
+
+        // Calculate coordinates
+        const x = u * 300;
+        const y = 200 - (v * 200) / 24;
+        ctxStrip.beginPath();
+        ctxStrip.arc(x, y, 5, 0, Math.PI * 2);
+        ctxStrip.fillStyle = "#00f";
+        ctxStrip.fill();
+
+        const lng1 = ((theta1 / (2 * Math.PI)) * 24).toFixed(0);
+        const lng2 = ((theta2 / (2 * Math.PI)) * 24).toFixed(0);
+
+        const absDiff = Math.abs(lng1 - lng2);
+        const k = 12 - Math.abs(12 - absDiff);
+
+        document.getElementById(
+          "values"
+        ).textContent = `lng1: ${lng1}, lng2: ${lng2}, k: ${k.toFixed(
+          0
+        )}, v: ${v.toFixed(0)}`;
+      }
+
+      // Event handlers
+      circleCanvas.addEventListener("mousedown", (e) => {
+        const rect = circleCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left - 150;
+        const y = e.clientY - rect.top - 150;
+        const dist1 = Math.hypot(
+          x - 100 * Math.cos(theta1),
+          y - 100 * Math.sin(theta1)
+        );
+        const dist2 = Math.hypot(
+          x - 100 * Math.cos(theta2),
+          y - 100 * Math.sin(theta2)
+        );
+        if (dist1 < 15) dragging = "theta1";
+        if (dist2 < 15) dragging = "theta2";
+      });
+
+      function updateLockButton() {
+        const button = document.getElementById("lockButton");
+        button.textContent = isLocked ? "Locked" : "Unlocked";
+        button.style.backgroundColor = isLocked
+          ? "#2962ff"
+          : "rgba(41, 98, 255, 0.3)";
+        button.style.color = isLocked ? "white" : "#2962ff";
+        button.style.padding = "8px 16px";
+        button.style.border = "none";
+        button.style.borderRadius = "4px";
+        button.style.cursor = "pointer";
+        button.style.width = "100px";
+        button.style.textAlign = "center";
+      }
+
+      // Add these event listeners after the existing ones
+      stripCanvas.addEventListener("mousedown", (e) => {
+        const rect = stripCanvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+
+        // Check if click is near the blue dot
+        const u = x / 300;
+        const v = 24 * (1 - y / 200);
+        const dotX = u * 300;
+        const dotY = 200 - (v * 200) / 24;
+
+        const dist = Math.hypot(x - dotX, y - dotY);
+        if (dist < 15) {
+          draggingBox = true;
+        }
+      });
+
+      document.addEventListener("mousemove", (e) => {
+        if (dragging) {
+          // Existing circle drag logic
+          const rect = circleCanvas.getBoundingClientRect();
+          const x = e.clientX - rect.left - 150;
+          const y = e.clientY - rect.top - 150;
+          const angle = Math.atan2(y, x);
+
+          if (isLocked) {
+            const angleDiff = angle - (dragging === "theta1" ? theta1 : theta2);
+            theta1 = (theta1 + angleDiff + 2 * Math.PI) % (2 * Math.PI);
+            theta2 = (theta2 + angleDiff + 2 * Math.PI) % (2 * Math.PI);
+          } else {
+            if (dragging === "theta1") theta1 = angle;
+            else theta2 = angle;
+
+            theta1 = (theta1 + 2 * Math.PI) % (2 * Math.PI);
+            theta2 = (theta2 + 2 * Math.PI) % (2 * Math.PI);
+          }
+
+          const {u, v} = calculateUV(theta1, theta2);
+          drawCircle();
+          drawStrip(u, v);
+        } else if (draggingBox) {
+          // Box drag logic
+          const rect = stripCanvas.getBoundingClientRect();
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+
+          // Constrain to box boundaries
+          const u = Math.max(0, Math.min(1, x / 300));
+          const v = Math.max(0, Math.min(24, 24 * (1 - y / 200)));
+
+          // Update thetas based on new u,v position
+          const {theta1: newTheta1, theta2: newTheta2} = calculateThetas(u, v);
+          theta1 = newTheta1;
+          theta2 = newTheta2;
+
+          drawCircle();
+          drawStrip(u, v);
+        }
+      });
+
+      document.addEventListener("mouseup", () => {
+        dragging = null;
+        draggingBox = false;
+      });
+
+      // Add lock button event listener
+      document.getElementById("lockButton").addEventListener("click", () => {
+        isLocked = !isLocked;
+        updateLockButton();
+      });
+
+      // Initial draw
+      const {u, v} = calculateUV(theta1, theta2);
+      drawCircle();
+      drawStrip(u, v);
+      updateLockButton();
+    </script>
+  </body>
+</html>

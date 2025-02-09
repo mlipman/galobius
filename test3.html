@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>3D Earth with Draggable Lines</title>
+    <style>
+      body {
+        margin: 0;
+      }
+      canvas {
+        display: block;
+      }
+      #lockButton {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        padding: 10px;
+        z-index: 100;
+      }
+    </style>
+  </head>
+  <body>
+    <button id="lockButton">Lock Lines</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+      let scene, camera, renderer, earth;
+      let line1, line2;
+      let isLocked = false;
+      let isDragging = false;
+      let selectedLine = null;
+      let initialAngle = 0;
+      let lineDistance = 0;
+
+      function init() {
+        // Create scene
+        scene = new THREE.Scene();
+        camera = new THREE.PerspectiveCamera(
+          75,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          1000
+        );
+        renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // Create Earth
+        const geometry = new THREE.SphereGeometry(5, 32, 32);
+        const texture = new THREE.TextureLoader().load(
+          "https://threejs.org/examples/textures/planets/earth_atmos_2048.jpg"
+        );
+        const material = new THREE.MeshBasicMaterial({map: texture});
+        earth = new THREE.Mesh(geometry, material);
+        earth.rotation.x = 40 * (Math.PI / 180); // Convert 20 degrees to radians
+        scene.add(earth);
+
+        // Create longitude lines
+        const curve = new THREE.EllipseCurve(
+          0,
+          0, // center x, y
+          5,
+          5, // x radius, y radius
+          -Math.PI / 2, // start angle (top)
+          Math.PI / 2, // end angle (bottom)
+          false // clockwise
+        );
+        const points = curve.getPoints(50);
+        const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+
+        const lineMaterial = new THREE.LineBasicMaterial({
+          color: 0xff0000,
+          linewidth: 9, // Added line thickness
+        });
+        line1 = new THREE.Line(lineGeometry, lineMaterial);
+        line2 = new THREE.Line(lineGeometry.clone(), lineMaterial);
+
+        line1.rotation.y = Math.PI / 4;
+        line2.rotation.y = Math.PI / 2;
+
+        // Add lines as children of earth instead of scene
+        earth.add(line1);
+        earth.add(line2);
+
+        camera.position.z = 15;
+
+        // Add event listeners
+        renderer.domElement.addEventListener("mousedown", onMouseDown);
+        renderer.domElement.addEventListener("mousemove", onMouseMove);
+        renderer.domElement.addEventListener("mouseup", onMouseUp);
+
+        document
+          .getElementById("lockButton")
+          .addEventListener("click", toggleLock);
+      }
+
+      function toggleLock() {
+        isLocked = !isLocked;
+        document.getElementById("lockButton").textContent = isLocked
+          ? "Unlock Lines"
+          : "Lock Lines";
+        if (isLocked) {
+          lineDistance = line2.rotation.y - line1.rotation.y;
+        }
+      }
+
+      function onMouseDown(event) {
+        isDragging = true;
+        const mouse = new THREE.Vector2(
+          (event.clientX / window.innerWidth) * 2 - 1,
+          -(event.clientY / window.innerHeight) * 2 + 1
+        );
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(mouse, camera);
+
+        const intersects = raycaster.intersectObjects([line1, line2, earth]);
+
+        if (intersects.length > 0) {
+          if (
+            intersects[0].object === line1 ||
+            intersects[0].object === line2
+          ) {
+            selectedLine = intersects[0].object;
+            initialAngle = Math.atan2(mouse.x, mouse.y);
+          } else {
+            selectedLine = earth;
+          }
+        }
+      }
+
+      function onMouseMove(event) {
+        if (!isDragging || !selectedLine) return;
+
+        const mouse = new THREE.Vector2(
+          (event.clientX / window.innerWidth) * 2 - 1,
+          -(event.clientY / window.innerHeight) * 2 + 1
+        );
+
+        if (selectedLine === earth) {
+          earth.rotation.y += event.movementX * 0.01;
+        } else {
+          const currentAngle = Math.atan2(mouse.x, mouse.y);
+          const angleChange = currentAngle - initialAngle;
+
+          if (selectedLine === line1) {
+            line1.rotation.y += angleChange;
+            if (isLocked) {
+              line2.rotation.y = line1.rotation.y + lineDistance;
+            }
+          } else if (selectedLine === line2) {
+            line2.rotation.y += angleChange;
+            if (isLocked) {
+              line1.rotation.y = line2.rotation.y - lineDistance;
+            }
+          }
+
+          initialAngle = currentAngle;
+        }
+      }
+
+      function onMouseUp() {
+        isDragging = false;
+        selectedLine = null;
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+
+      init();
+      animate();
+
+      // Handle window resizing
+      window.addEventListener("resize", () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+    </script>
+  </body>
+</html>

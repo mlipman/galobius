@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Möbius Strip Visualization with Continuous Circles</title>
+    <style>
+      body,
+      html {
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        height: 100%;
+      }
+      canvas {
+        display: block;
+      }
+      #circles {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 50%;
+        height: 100%;
+        border-right: 2px solid #000;
+      }
+      #threejs {
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 50%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="circles"></canvas>
+    <div id="threejs"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+      /* old function
+        function mapToMobiusStrip(angle1, angle2) {
+
+            const radius = 2; // Radius of the Möbius strip's central loop
+
+            const width = 0.5; // Half-width of the strip
+
+            // Average the angles to represent an unordered pair
+
+            const u = (angle1 + angle2) / 2;
+
+            const v = Math.sin((angle1 - angle2) / 2);
+
+            // Parametric equations for the Möbius strip
+
+            const mx = (radius + width  v  Math.cos(u / 2)) * Math.cos(u);
+
+            const my = (radius + width  v  Math.cos(u / 2)) * Math.sin(u);
+
+            const mz = width  v  Math.sin(u / 2);
+
+            return new THREE.Vector3(mx, my, mz);
+
+        }
+	*/
+
+      const circlesCanvas = document.getElementById("circles");
+      const circlesCtx = circlesCanvas.getContext("2d");
+      circlesCanvas.width = window.innerWidth / 2;
+      circlesCanvas.height = window.innerHeight;
+
+      const circleRadius = 100;
+      const circle1Center = {
+        x: circlesCanvas.width / 3,
+        y: circlesCanvas.height / 2,
+      };
+      const circle2Center = {
+        x: (2 * circlesCanvas.width) / 3,
+        y: circlesCanvas.height / 2,
+      };
+
+      let dot1Angle = 0;
+      let dot2Angle = 0;
+
+      let isDraggingDot1 = false;
+      let isDraggingDot2 = false;
+
+      function normalizeAngle(angle) {
+        // Normalize angle to [0, 2π]
+        return ((angle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      }
+
+      function getK(theta1, theta2) {
+        // Convert angles to [0, 2π] range
+        theta1 = normalizeAngle(theta1);
+        theta2 = normalizeAngle(theta2);
+
+        // Calculate difference in radians
+        let diff = Math.abs(theta1 - theta2);
+        return Math.min(diff, 2 * Math.PI - diff);
+      }
+
+      function getV(theta1, theta2) {
+        // Normalize angles to [0, 2π]
+        theta1 = normalizeAngle(theta1);
+        theta2 = normalizeAngle(theta2);
+
+        let k = getK(theta1, theta2);
+        let sum = theta1 + theta2;
+
+        // Get the π-shifted version
+        let theta1Shifted = (theta1 + Math.PI) % (2 * Math.PI);
+        let theta2Shifted = (theta2 + Math.PI) % (2 * Math.PI);
+        let shiftedSum = theta1Shifted + theta2Shifted;
+
+        if (sum < shiftedSum) {
+          return Math.PI - k;
+        } else {
+          return Math.PI + k;
+        }
+      }
+
+      function mapToMobiusStrip(theta1, theta2) {
+        const radius = 2;
+        const width = 0.5;
+
+        // Normalize angles and compute parameters
+        theta1 = normalizeAngle(theta1);
+        theta2 = normalizeAngle(theta2);
+
+        const u = (theta1 + theta2) % (2 * Math.PI);
+        const v = (getV(theta1, theta2) - Math.PI) / Math.PI;
+
+        const mx = (radius + width * v * Math.cos(u / 2)) * Math.cos(u);
+        const my = (radius + width * v * Math.cos(u / 2)) * Math.sin(u);
+        const mz = width * v * Math.sin(u / 2);
+
+        return new THREE.Vector3(mx, my, mz);
+      }
+
+      function drawCircles() {
+        circlesCtx.clearRect(0, 0, circlesCanvas.width, circlesCanvas.height);
+
+        // Draw Circle 1
+        circlesCtx.strokeStyle = "#000";
+        circlesCtx.lineWidth = 2;
+        circlesCtx.beginPath();
+        circlesCtx.arc(
+          circle1Center.x,
+          circle1Center.y,
+          circleRadius,
+          0,
+          Math.PI * 2
+        );
+        circlesCtx.stroke();
+
+        // Draw Circle 2
+        circlesCtx.beginPath();
+        circlesCtx.arc(
+          circle2Center.x,
+          circle2Center.y,
+          circleRadius,
+          0,
+          Math.PI * 2
+        );
+        circlesCtx.stroke();
+
+        // Draw Dot 1
+        const dot1X = circle1Center.x + circleRadius * Math.cos(dot1Angle);
+        const dot1Y = circle1Center.y + circleRadius * Math.sin(dot1Angle);
+        circlesCtx.fillStyle = "red";
+        circlesCtx.beginPath();
+        circlesCtx.arc(dot1X, dot1Y, 5, 0, Math.PI * 2);
+        circlesCtx.fill();
+
+        // Draw Dot 2
+        const dot2X = circle2Center.x + circleRadius * Math.cos(dot2Angle);
+        const dot2Y = circle2Center.y + circleRadius * Math.sin(dot2Angle);
+        circlesCtx.fillStyle = "blue";
+        circlesCtx.beginPath();
+        circlesCtx.arc(dot2X, dot2Y, 5, 0, Math.PI * 2);
+        circlesCtx.fill();
+      }
+
+      const scene = new THREE.Scene();
+      const camera = new THREE.PerspectiveCamera(
+        75,
+        window.innerWidth / 2 / window.innerHeight,
+        0.1,
+        1000
+      );
+      const renderer = new THREE.WebGLRenderer({antialias: true});
+      renderer.setSize(window.innerWidth / 2, window.innerHeight);
+      document.getElementById("threejs").appendChild(renderer.domElement);
+
+      const light = new THREE.DirectionalLight(0xffffff, 1);
+      light.position.set(5, 5, -5).normalize();
+      scene.add(light);
+      scene.add(new THREE.AmbientLight(0x404040));
+
+      const mobiusStrip = createMobiusStrip();
+      scene.add(mobiusStrip);
+
+      const border = createMobiusStripBorder();
+      scene.add(border);
+
+      // Update camera position with 90 degree rotation
+      camera.position.set(1, 4, -4);
+      camera.lookAt(0, 0, 0);
+
+      let previousMouseAngle1 = dot1Angle;
+      let previousMouseAngle2 = dot2Angle;
+
+      circlesCanvas.addEventListener("mousedown", (event) => {
+        const rect = circlesCanvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        const dx1 =
+          mouseX - (circle1Center.x + circleRadius * Math.cos(dot1Angle));
+        const dy1 =
+          mouseY - (circle1Center.y + circleRadius * Math.sin(dot1Angle));
+        if (Math.hypot(dx1, dy1) < 10) {
+          isDraggingDot1 = true;
+          previousMouseAngle1 = Math.atan2(
+            mouseY - circle1Center.y,
+            mouseX - circle1Center.x
+          );
+        }
+
+        const dx2 =
+          mouseX - (circle2Center.x + circleRadius * Math.cos(dot2Angle));
+        const dy2 =
+          mouseY - (circle2Center.y + circleRadius * Math.sin(dot2Angle));
+        if (Math.hypot(dx2, dy2) < 10) {
+          isDraggingDot2 = true;
+          previousMouseAngle2 = Math.atan2(
+            mouseY - circle2Center.y,
+            mouseX - circle2Center.x
+          );
+        }
+      });
+
+      circlesCanvas.addEventListener("mouseup", () => {
+        isDraggingDot1 = false;
+        isDraggingDot2 = false;
+      });
+
+      circlesCanvas.addEventListener("mousemove", (event) => {
+        const rect = circlesCanvas.getBoundingClientRect();
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
+
+        if (isDraggingDot1) {
+          const currentMouseAngle = Math.atan2(
+            mouseY - circle1Center.y,
+            mouseX - circle1Center.x
+          );
+          const deltaAngle = currentMouseAngle - previousMouseAngle1;
+
+          if (deltaAngle > Math.PI) {
+            dot1Angle -= 2 * Math.PI;
+          } else if (deltaAngle < -Math.PI) {
+            dot1Angle += 2 * Math.PI;
+          }
+
+          dot1Angle += deltaAngle;
+          previousMouseAngle1 = currentMouseAngle;
+          updateVisualization();
+        }
+
+        if (isDraggingDot2) {
+          const currentMouseAngle = Math.atan2(
+            mouseY - circle2Center.y,
+            mouseX - circle2Center.x
+          );
+          const deltaAngle = currentMouseAngle - previousMouseAngle2;
+
+          if (deltaAngle > Math.PI) {
+            dot2Angle -= 2 * Math.PI;
+          } else if (deltaAngle < -Math.PI) {
+            dot2Angle += 2 * Math.PI;
+          }
+
+          dot2Angle += deltaAngle;
+          previousMouseAngle2 = currentMouseAngle;
+          updateVisualization();
+        }
+      });
+
+      function updateVisualization() {
+        drawCircles();
+        const mobiusPoint = mapToMobiusStrip(dot1Angle, dot2Angle);
+
+        if (mobiusStrip.userData.point) {
+          mobiusStrip.userData.point.position.copy(mobiusPoint);
+        } else {
+          const pointGeometry = new THREE.SphereGeometry(0.1, 16, 16);
+          const pointMaterial = new THREE.MeshBasicMaterial({color: 0xff0000});
+          mobiusStrip.userData.point = new THREE.Mesh(
+            pointGeometry,
+            pointMaterial
+          );
+          scene.add(mobiusStrip.userData.point);
+        }
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        renderer.render(scene, camera);
+      }
+
+      function createMobiusStrip() {
+        const segments = 100;
+        const radius = 2;
+        const width = 0.5;
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+        const indices = [];
+
+        for (let i = 0; i <= segments; i++) {
+          const u = (i / segments) * Math.PI * 2;
+          for (let j = 0; j <= 1; j++) {
+            const v = j * 2 - 1;
+            const x = (radius + width * v * Math.cos(u / 2)) * Math.cos(u);
+            const y = (radius + width * v * Math.cos(u / 2)) * Math.sin(u);
+            const z = width * v * Math.sin(u / 2);
+            vertices.push(x, y, z);
+          }
+        }
+
+        for (let i = 0; i < segments; i++) {
+          const stride = i * 2;
+          indices.push(stride, stride + 1, stride + 2);
+          indices.push(stride + 1, stride + 2, stride + 3);
+        }
+
+        geometry.setIndex(indices);
+        geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(vertices, 3)
+        );
+
+        const material = new THREE.MeshPhongMaterial({
+          color: 0x00aaff,
+          side: THREE.DoubleSide,
+          flatShading: true,
+          transparent: true,
+          opacity: 0.8,
+        });
+
+        return new THREE.Mesh(geometry, material);
+      }
+
+      function createMobiusStripBorder() {
+        const segments = 100;
+        const radius = 2;
+        const width = 0.5;
+        const geometry = new THREE.BufferGeometry();
+        const vertices = [];
+
+        for (let i = 0; i <= segments; i++) {
+          const u = (i / segments) * Math.PI * 2;
+          const v = 1;
+          const x = (radius + width * v * Math.cos(u / 2)) * Math.cos(u);
+          const y = (radius + width * v * Math.cos(u / 2)) * Math.sin(u);
+          const z = width * v * Math.sin(u / 2);
+          vertices.push(x, y, z);
+        }
+
+        geometry.setAttribute(
+          "position",
+          new THREE.Float32BufferAttribute(vertices, 3)
+        );
+
+        const material = new THREE.LineBasicMaterial({color: 0xff0000});
+        return new THREE.Line(geometry, material);
+      }
+
+      animate();
+      drawCircles();
+      updateVisualization();
+    </script>
+  </body>
+</html>
