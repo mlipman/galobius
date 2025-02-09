@@ -155,7 +155,7 @@
       let globeLine1, globeLine2;
       let isGlobeDraggingLine = false;
       let selectedGlobeLine = null;
-      let globeMode = "oneline"; // "oneline" or "rotate"
+      let globeMode = "oneline"; // "oneline", "bothlines", or "rotate"
       let longitude1 = 88,
         longitude2 = 0; // initial longitudes
       const globeMouse = new THREE.Vector2();
@@ -463,6 +463,17 @@
         return (24 * (input + 180)) / 360;
       }
 
+      function calculateOtherLongitude(newLng, oldLng, otherLng) {
+        const newLngMoved = newLng + 180;
+        const oldLngMoved = oldLng + 180;
+        const diff = newLng - oldLng;
+        const diffMod = (diff + 360) % 360;
+        const otherMoved = otherLng + 180;
+        const otherAdj = (otherMoved + diffMod) % 360;
+        const otherReturned = otherAdj - 180;
+        return otherReturned;
+      }
+
       // Toggle the mode for the strip scene between "Dot" and "Rotate" (Orbit) mode
       function toggleStripMode() {
         isOrbitMode = !isOrbitMode;
@@ -474,16 +485,21 @@
 
       // Toggle the globe mode between "oneline" (adjust lines) and "rotate"
       function toggleGlobeMode() {
-        if (globeMode === "rotate") {
-          globeMode = "oneline";
+        if (globeMode === "oneline") {
+          globeMode = "bothlines";
           globeControls.enabled = false;
           document.getElementById("globe-mode-toggle").textContent =
-            "Globe: Lines";
-        } else {
+            "Globe: Both Lines";
+        } else if (globeMode === "bothlines") {
           globeMode = "rotate";
           globeControls.enabled = true;
           document.getElementById("globe-mode-toggle").textContent =
             "Globe: Rotate";
+        } else {
+          globeMode = "oneline";
+          globeControls.enabled = false;
+          document.getElementById("globe-mode-toggle").textContent =
+            "Globe: One Line";
         }
       }
 
@@ -532,7 +548,6 @@
         globeMouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
         globeMouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
-        // Reuse the raycaster for globe interactions
         stripRaycaster = new THREE.Raycaster();
         stripRaycaster.setFromCamera(globeMouse, globeCamera);
 
@@ -561,17 +576,43 @@
           const point = intersects[0].point;
           const newLongitude = (Math.atan2(point.z, point.x) * 180) / Math.PI;
 
-          // Update only the selected globe line
+          // Update globe lines based on mode
           if (selectedGlobeLine === 1) {
+            const oldLng1 = longitude1;
             globeScene.remove(globeLine1);
             globeLine1 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine1);
             longitude1 = newLongitude;
+
+            if (globeMode === "bothlines") {
+              const newLng2 = calculateOtherLongitude(
+                newLongitude,
+                oldLng1,
+                longitude2
+              );
+              globeScene.remove(globeLine2);
+              globeLine2 = createLongitudeLine(newLng2, 5.01, 0xff0000);
+              globeScene.add(globeLine2);
+              longitude2 = newLng2;
+            }
           } else if (selectedGlobeLine === 2) {
+            const oldLng2 = longitude2;
             globeScene.remove(globeLine2);
             globeLine2 = createLongitudeLine(newLongitude, 5.01, 0xff0000);
             globeScene.add(globeLine2);
             longitude2 = newLongitude;
+
+            if (globeMode === "bothlines") {
+              const newLng1 = calculateOtherLongitude(
+                newLongitude,
+                oldLng2,
+                longitude1
+              );
+              globeScene.remove(globeLine1);
+              globeLine1 = createLongitudeLine(newLng1, 5.01, 0xff0000);
+              globeScene.add(globeLine1);
+              longitude1 = newLng1;
+            }
           }
 
           // Update the dot position based on the new longitudes
